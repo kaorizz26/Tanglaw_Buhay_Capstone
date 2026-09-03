@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LGU Staff Login | Tanglaw-Buhay</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="auth-page">
+    <main class="login-layout">
+        <section class="identity-panel" aria-labelledby="portal-name">
+            <div class="identity-content">
+                <div class="brand-lockup">
+                    <span class="brand-mark brand-mark-large" aria-hidden="true">
+                        <span class="brand-initials">TB</span>
+                    </span>
+                    <div class="brand-copy brand-copy-large">
+                        <strong id="portal-name">Tanglaw-Buhay</strong>
+                        <span>LGU Staff Portal</span>
+                    </div>
+                </div>
+
+                <div class="identity-message">
+                    <span class="identity-accent" aria-hidden="true"></span>
+                    <p class="platform-name">Decision Support Analytics Platform</p>
+                    <p class="location-name">Pozorrubio, Pangasinan</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="login-area" aria-labelledby="login-title">
+            <div class="login-content">
+                <header class="login-header">
+                    <p class="login-eyebrow">LGU Staff Portal</p>
+                    <h1 id="login-title">Sign in to your account</h1>
+                    <p class="supporting-text">
+                        Use your authorized LGU staff credentials to continue.
+                    </p>
+                </header>
+
+                {% if error %}
+                    <div class="form-alert" id="login-error" role="alert" aria-live="assertive">
+                        {{ error }}
+                    </div>
+                {% endif %}
+
+                <form class="login-form" method="post" action="{{ url_for('login') }}">
+                    <div class="form-field">
+                        <label for="username">Username</label>
+                        <input
+                            id="username"
+                            name="username"
+                            type="text"
+                            value="{{ request.form.get('username', '') }}"
+                            autocomplete="username"
+                            {% if error %}aria-invalid="true" aria-describedby="login-error"{% endif %}
+                            required
+                            autofocus
+                        >
+                    </div>
+
+                    <div class="form-field">
+                        <label for="password">Password</label>
+                        <input
+                            id="password"
+                            name="password"
+                            type="password"
+                            autocomplete="current-password"
+                            {% if error %}aria-invalid="true" aria-describedby="login-error"{% endif %}
+                            required
+                        >
+                    </div>
+
+                    <button class="primary-button" type="submit">Sign In</button>
+                </form>
+
+                <p class="authorized-note">For authorized LGU personnel only.</p>
+            </div>
+        </section>
+    </main>
+</body>
+</html>

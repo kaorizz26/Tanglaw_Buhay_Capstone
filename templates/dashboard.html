@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard | Tanglaw-Buhay{% endblock %}
+
+{% block content %}
+    <div class="page-heading">
+        <h1>Dashboard</h1>
+        <p>Household and population overview</p>
+    </div>
+
+    {% if dashboard_error %}
+        <section class="dashboard-error" role="alert" aria-labelledby="dashboard-error-title">
+            <p class="error-eyebrow">Data unavailable</p>
+            <h2 id="dashboard-error-title">Unable to load the dashboard</h2>
+            <p>{{ dashboard_error }}</p>
+        </section>
+    {% else %}
+        <section class="summary-section" aria-labelledby="summary-title">
+            <h2 class="visually-hidden" id="summary-title">Household summary</h2>
+            <div class="summary-grid">
+                {% for card in summary_cards %}
+                    <article class="summary-card">
+                        <p class="summary-label">{{ card.label }}</p>
+                        <p class="summary-value">{{ "{:,}".format(card.value) }}</p>
+                    </article>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="charts-grid" aria-label="Dashboard visualizations">
+            <article class="chart-surface">
+                <header class="chart-header">
+                    <h2>Population by Age Group</h2>
+                    <p>Distribution of household members across age groups.</p>
+                </header>
+                <div class="chart-canvas-wrap">
+                    <canvas
+                        id="age-group-chart"
+                        role="img"
+                        aria-label="Bar chart of household members grouped as children, adults, and seniors."
+                        aria-describedby="age-group-values"
+                    ></canvas>
+                </div>
+                <dl class="chart-values" id="age-group-values">
+                    {% for item in age_groups %}
+                        <div>
+                            <dt>{{ item.label }}</dt>
+                            <dd>{{ "{:,}".format(item.value) }} members</dd>
+                        </div>
+                    {% endfor %}
+                </dl>
+            </article>
+
+            <article class="chart-surface">
+                <header class="chart-header">
+                    <h2>Food Security Snapshot</h2>
+                    <p>Households reporting selected food-security difficulties.</p>
+                </header>
+                <div class="chart-canvas-wrap">
+                    <canvas
+                        id="food-security-chart"
+                        role="img"
+                        aria-label="Bar chart of households reporting four selected food-security difficulties."
+                        aria-describedby="food-security-values"
+                    ></canvas>
+                </div>
+                <dl class="chart-values" id="food-security-values">
+                    {% for item in food_security %}
+                        <div>
+                            <dt>{{ item.label }}</dt>
+                            <dd>{{ "{:,}".format(item.value) }} households</dd>
+                        </div>
+                    {% endfor %}
+                </dl>
+            </article>
+        </section>
+
+        <script id="dashboard-chart-data" type="application/json">
+            {{ {"ageGroups": age_groups, "foodSecurity": food_security}|tojson }}
+        </script>
+        <script src="{{ url_for('static', filename='js/chart.umd.min.js') }}" defer></script>
+        <script src="{{ url_for('static', filename='js/dashboard.js') }}" defer></script>
+    {% endif %}
+{% endblock %}

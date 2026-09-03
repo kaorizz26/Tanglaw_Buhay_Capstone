@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Tanglaw-Buhay{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="app-page">
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+
+    <div class="app-shell">
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                <span class="brand-mark" aria-hidden="true">
+                    <span class="brand-initials">TB</span>
+                </span>
+                <span class="brand-copy">
+                    <strong>Tanglaw-Buhay</strong>
+                    <span>LGU Staff Portal</span>
+                </span>
+            </div>
+
+            <nav class="sidebar-nav" aria-label="Primary navigation">
+                <p class="nav-label">Workspace</p>
+                <a
+                    class="nav-link{% if request.endpoint == 'dashboard' %} is-active{% endif %}"
+                    href="{{ url_for('dashboard') }}"
+                    {% if request.endpoint == 'dashboard' %}aria-current="page"{% endif %}
+                >
+                    <span class="nav-indicator" aria-hidden="true"></span>
+                    Dashboard
+                </a>
+            </nav>
+
+            <div class="sidebar-account">
+                <div>
+                    <p class="account-label">Signed in as</p>
+                    <p class="account-role">LGU Staff</p>
+                </div>
+                <form method="post" action="{{ url_for('logout') }}">
+                    <button class="sign-out-button" type="submit">Sign Out</button>
+                </form>
+            </div>
+        </aside>
+
+        <div class="app-workspace">
+            <header class="workspace-bar">
+                <p>Decision Support Analytics Platform</p>
+                <p class="workspace-location">Pozorrubio, Pangasinan</p>
+            </header>
+
+            <main class="workspace-content" id="main-content" tabindex="-1">
+                {% block content %}{% endblock %}
+            </main>
+        </div>
+    </div>
+</body>
+</html>
