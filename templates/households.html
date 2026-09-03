@@ -63,7 +63,7 @@
                     >
                         <table class="records-table">
                             <caption class="visually-hidden">
-                                Household IDs, household heads, member totals, and age composition
+                                Household IDs, household heads, member totals, age composition, and View actions
                             </caption>
                             <thead>
                                 <tr>
@@ -71,6 +71,7 @@
                                     <th scope="col">Household Head</th>
                                     <th scope="col" class="numeric-column">Members</th>
                                     <th scope="col">Household Composition</th>
+                                    <th scope="col" class="action-column">Action</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -80,6 +81,15 @@
                                         <td class="head-name">{{ household.household_head }}</td>
                                         <td class="numeric-column">{{ household.member_count }}</td>
                                         <td>{{ household.composition }}</td>
+                                        <td class="action-column">
+                                            <button
+                                                class="record-view-button"
+                                                type="button"
+                                                data-household-id="{{ household.household_id }}"
+                                                data-details-url="{{ url_for('household_details', household_id=household.household_id) }}"
+                                                aria-haspopup="dialog"
+                                            >View</button>
+                                        </td>
                                     </tr>
                                 {% endfor %}
                             </tbody>
@@ -134,5 +144,119 @@
                 {% endif %}
             </div>
         </section>
+
+        <div class="household-modal" id="household-modal" hidden>
+            <div class="modal-backdrop" data-modal-close aria-hidden="true"></div>
+            <div
+                class="household-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="household-modal-title"
+                tabindex="-1"
+            >
+                <header class="modal-header">
+                    <div>
+                        <p class="modal-eyebrow">Household Record</p>
+                        <h2 id="household-modal-title">
+                            Household <span data-modal-household-id></span>
+                        </h2>
+                    </div>
+                    <button
+                        class="modal-close-button"
+                        type="button"
+                        data-modal-close
+                        aria-label="Close household record"
+                    ><span aria-hidden="true">&times;</span></button>
+                </header>
+
+                <div class="modal-body" data-modal-body aria-busy="false">
+                    <div class="modal-loading" data-modal-loading role="status" hidden>
+                        <span class="loading-indicator" aria-hidden="true"></span>
+                        <p>Loading household record...</p>
+                    </div>
+
+                    <div class="modal-error" data-modal-error role="alert" hidden>
+                        <p class="error-eyebrow">Data unavailable</p>
+                        <h3>Unable to load this household record.</h3>
+                        <p>Please close the window and try again.</p>
+                    </div>
+
+                    <div class="modal-content" data-modal-content hidden>
+                        <section class="detail-section" aria-labelledby="overview-title">
+                            <h3 id="overview-title">Household Overview</h3>
+                            <dl class="overview-grid">
+                                <div>
+                                    <dt>Household ID</dt>
+                                    <dd data-overview="household_id"></dd>
+                                </div>
+                                <div>
+                                    <dt>Household Head</dt>
+                                    <dd data-overview="household_head"></dd>
+                                </div>
+                                <div>
+                                    <dt>Total Members</dt>
+                                    <dd data-overview="total_members"></dd>
+                                </div>
+                                <div>
+                                    <dt>Children</dt>
+                                    <dd data-overview="children"></dd>
+                                </div>
+                                <div>
+                                    <dt>Adults</dt>
+                                    <dd data-overview="adults"></dd>
+                                </div>
+                                <div>
+                                    <dt>Seniors</dt>
+                                    <dd data-overview="seniors"></dd>
+                                </div>
+                                <div>
+                                    <dt>PWD Member</dt>
+                                    <dd>
+                                        <span data-overview="pwd_member"></span>
+                                        <div class="pwd-identification" data-pwd-identification hidden>
+                                            <p class="pwd-identification-label" data-pwd-identification-label></p>
+                                            <ul class="pwd-member-names" data-pwd-member-names></ul>
+                                        </div>
+                                    </dd>
+                                </div>
+                            </dl>
+                        </section>
+
+                        <section class="detail-section" aria-labelledby="members-title">
+                            <h3 id="members-title">Household Members</h3>
+                            <div class="member-table-scroll" role="region" aria-label="Household members table" tabindex="0">
+                                <table class="member-table">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col">Name</th>
+                                            <th scope="col">Age</th>
+                                            <th scope="col">Sex</th>
+                                            <th scope="col">Relationship</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody data-member-rows></tbody>
+                                </table>
+                            </div>
+                        </section>
+
+                        <section class="detail-section" aria-labelledby="conditions-title">
+                            <h3 id="conditions-title">Selected Household Conditions</h3>
+                            <div class="condition-groups">
+                                <section class="condition-group" aria-labelledby="food-security-title">
+                                    <h4 id="food-security-title">Food Security</h4>
+                                    <dl class="condition-list" data-food-security></dl>
+                                </section>
+                                <section class="condition-group" aria-labelledby="resources-title">
+                                    <h4 id="resources-title">Household Resources &amp; Protection</h4>
+                                    <dl class="condition-list" data-resources-protection></dl>
+                                </section>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script src="{{ url_for('static', filename='js/households.js') }}" defer></script>
     {% endif %}
 {% endblock %}

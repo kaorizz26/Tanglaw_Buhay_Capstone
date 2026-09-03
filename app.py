@@ -4,7 +4,7 @@ import os
 
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.exc import SQLAlchemyError
 
 
@@ -47,6 +47,17 @@ db = SQLAlchemy(app)
 
 HOUSEHOLDS_PER_PAGE = 15
 HOUSEHOLD_FILTERS = {"all", "children", "seniors", "pwd"}
+DETAIL_TRANSLATION_VARIABLES = (
+    "A02_RELATION_TO_HH_HEAD",
+    "A05_SEX",
+    "L15_WITH_PWD_MEMBER",
+    "J01_WORRIED",
+    "J04_SKIPPED_MEAL",
+    "J06_RAN_OUT_OF_FOOD",
+    "J07_HUNGRY",
+    "K04_PRESENCE_OF_SAVINGS",
+    "K10_C_HEALTH_INSURANCE",
+)
 
 HOUSEHOLD_SUMMARY_CTE = """
     WITH member_summary AS (
@@ -336,6 +347,238 @@ def get_household_records(search, household_filter, requested_page):
     }
 
 
+def format_person_name(person):
+    """Join available CBMS name components without leaving extra spaces."""
+
+    components = (
+        person["a01_first_name"],
+        person["a01_middle_name"],
+        person["a01_last_name"],
+        person["a01_suffix"],
+    )
+    name_parts = [str(component).strip() for component in components if component]
+    return " ".join(name_parts) if name_parts else "Not available"
+
+
+def get_detail_codebook_labels():
+    """Load only the codebook mappings used by the household details modal."""
+
+    codebook_query = text(
+        """
+        SELECT variable_name, code, label
+        FROM codebook_values
+        WHERE variable_name IN :variable_names
+        """
+    ).bindparams(bindparam("variable_names", expanding=True))
+    codebook_rows = db.session.execute(
+        codebook_query,
+        {"variable_names": DETAIL_TRANSLATION_VARIABLES},
+    ).mappings()
+    return {
+        (row["variable_name"], row["code"]): row["label"]
+        for row in codebook_rows
+    }
+
+
+def translate_detail_code(codebook_labels, variable_name, raw_code):
+    """Translate a raw code without treating a blank response as No."""
+
+    if raw_code is None or not str(raw_code).strip():
+        return "Not available"
+    return codebook_labels.get(
+        (variable_name, str(raw_code).strip()),
+        "Unrecognized response",
+    )
+
+
+def get_household_details(household_id):
+    """Return one household's approved modal details using read-only queries."""
+
+    household = db.session.execute(
+        text(
+            """
+            SELECT
+                households.household_id,
+                COUNT(members.member_id) AS total_members,
+                COUNT(*) FILTER (
+                    WHERE members.a07_age BETWEEN 0 AND 17
+                ) AS children,
+                COUNT(*) FILTER (
+                    WHERE members.a07_age BETWEEN 18 AND 59
+                ) AS adults,
+                COUNT(*) FILTER (
+                    WHERE members.a07_age >= 60
+                ) AS seniors,
+                MAX(
+                    CONCAT_WS(
+                        ' ',
+                        NULLIF(BTRIM(members.a01_first_name), ''),
+                        NULLIF(BTRIM(members.a01_middle_name), ''),
+                        NULLIF(BTRIM(members.a01_last_name), ''),
+                        NULLIF(BTRIM(members.a01_suffix), '')
+                    )
+                ) FILTER (
+                    WHERE members.a02_relation_to_hh_head = '01'
+                ) AS household_head,
+                MAX(households.l15_with_pwd_member) AS pwd_member_code,
+                MAX(households.j01_worried) AS worried_code,
+                MAX(households.j04_skipped_meal) AS skipped_meal_code,
+                MAX(households.j06_ran_out_of_food) AS ran_out_of_food_code,
+                MAX(households.j07_hungry) AS hungry_code,
+                MAX(households.k04_presence_of_savings) AS savings_code,
+                MAX(households.k10_c_health_insurance) AS health_insurance_code
+            FROM households
+            LEFT JOIN household_members AS members
+              ON members.household_id = households.household_id
+            WHERE households.household_id = :household_id
+            GROUP BY households.household_id
+            """
+        ),
+        {"household_id": household_id},
+    ).mappings().one_or_none()
+
+    if household is None:
+        return None
+
+    member_rows = db.session.execute(
+        text(
+            """
+            SELECT
+                a01_first_name,
+                a01_middle_name,
+                a01_last_name,
+                a01_suffix,
+                a07_age,
+                a05_sex,
+                a02_relation_to_hh_head
+            FROM household_members
+            WHERE household_id = :household_id
+            ORDER BY line_number ASC
+            """
+        ),
+        {"household_id": household_id},
+    ).mappings().all()
+
+    pwd_member_rows = []
+    if household["pwd_member_code"] == "1":
+        pwd_member_rows = db.session.execute(
+            text(
+                """
+                SELECT DISTINCT
+                    members.member_id,
+                    members.line_number,
+                    members.a01_first_name,
+                    members.a01_middle_name,
+                    members.a01_last_name,
+                    members.a01_suffix
+                FROM member_health AS health
+                JOIN household_members AS members
+                  ON members.household_id = health.household_id
+                 AND members.line_number = BTRIM(health.l16_pwd)
+                WHERE health.household_id = :household_id
+                  AND COALESCE(BTRIM(health.l16_pwd), '') <> ''
+                ORDER BY members.line_number ASC
+                """
+            ),
+            {"household_id": household_id},
+        ).mappings().all()
+
+    codebook_labels = get_detail_codebook_labels()
+    members = [
+        {
+            "name": format_person_name(member),
+            "age": member["a07_age"],
+            "sex": translate_detail_code(
+                codebook_labels,
+                "A05_SEX",
+                member["a05_sex"],
+            ),
+            "relationship": translate_detail_code(
+                codebook_labels,
+                "A02_RELATION_TO_HH_HEAD",
+                member["a02_relation_to_hh_head"],
+            ),
+        }
+        for member in member_rows
+    ]
+
+    return {
+        "overview": {
+            "household_id": household["household_id"],
+            "household_head": household["household_head"] or "Not available",
+            "total_members": household["total_members"],
+            "children": household["children"],
+            "adults": household["adults"],
+            "seniors": household["seniors"],
+            "pwd_member": translate_detail_code(
+                codebook_labels,
+                "L15_WITH_PWD_MEMBER",
+                household["pwd_member_code"],
+            ),
+            "pwd_member_present": household["pwd_member_code"] == "1",
+            "pwd_members": [
+                {"name": format_person_name(pwd_member)}
+                for pwd_member in pwd_member_rows
+            ],
+        },
+        "members": members,
+        "conditions": {
+            "food_security": [
+                {
+                    "label": "Worried about enough food",
+                    "value": translate_detail_code(
+                        codebook_labels,
+                        "J01_WORRIED",
+                        household["worried_code"],
+                    ),
+                },
+                {
+                    "label": "Skipped a meal",
+                    "value": translate_detail_code(
+                        codebook_labels,
+                        "J04_SKIPPED_MEAL",
+                        household["skipped_meal_code"],
+                    ),
+                },
+                {
+                    "label": "Ran out of food",
+                    "value": translate_detail_code(
+                        codebook_labels,
+                        "J06_RAN_OUT_OF_FOOD",
+                        household["ran_out_of_food_code"],
+                    ),
+                },
+                {
+                    "label": "Experienced hunger",
+                    "value": translate_detail_code(
+                        codebook_labels,
+                        "J07_HUNGRY",
+                        household["hungry_code"],
+                    ),
+                },
+            ],
+            "resources_and_protection": [
+                {
+                    "label": "Presence of savings",
+                    "value": translate_detail_code(
+                        codebook_labels,
+                        "K04_PRESENCE_OF_SAVINGS",
+                        household["savings_code"],
+                    ),
+                },
+                {
+                    "label": "Health insurance",
+                    "value": translate_detail_code(
+                        codebook_labels,
+                        "K10_C_HEALTH_INSURANCE",
+                        household["health_insurance_code"],
+                    ),
+                },
+            ],
+        },
+    }
+
+
 @app.route("/dashboard")
 @login_required
 def dashboard():
@@ -401,6 +644,22 @@ def households():
         household_filter=household_filter,
         **household_data,
     )
+
+
+@app.route("/households/<household_id>/details")
+@login_required
+def household_details(household_id):
+    try:
+        details = get_household_details(household_id)
+    except SQLAlchemyError:
+        db.session.rollback()
+        app.logger.exception("Household details could not be retrieved.")
+        return jsonify({"error": "Unable to load this household record."}), 503
+
+    if details is None:
+        return jsonify({"error": "Household not found."}), 404
+
+    return jsonify(details)
 
 
 @app.route("/logout", methods=["POST"])
