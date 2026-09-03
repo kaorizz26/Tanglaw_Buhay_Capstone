@@ -45,6 +45,48 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 db = SQLAlchemy(app)
 
+HOUSEHOLDS_PER_PAGE = 15
+HOUSEHOLD_FILTERS = {"all", "children", "seniors", "pwd"}
+
+HOUSEHOLD_SUMMARY_CTE = """
+    WITH member_summary AS (
+        SELECT
+            household_id,
+            COUNT(member_id) AS member_count,
+            COUNT(*) FILTER (WHERE a07_age BETWEEN 0 AND 17) AS children,
+            COUNT(*) FILTER (WHERE a07_age BETWEEN 18 AND 59) AS adults,
+            COUNT(*) FILTER (WHERE a07_age >= 60) AS seniors,
+            MAX(
+                CONCAT_WS(
+                    ' ',
+                    NULLIF(BTRIM(a01_first_name), ''),
+                    NULLIF(BTRIM(a01_middle_name), ''),
+                    NULLIF(BTRIM(a01_last_name), ''),
+                    NULLIF(BTRIM(a01_suffix), '')
+                )
+            ) FILTER (WHERE a02_relation_to_hh_head = '01') AS household_head
+        FROM household_members
+        GROUP BY household_id
+    )
+"""
+
+HOUSEHOLD_LIST_WHERE = """
+    WHERE (
+        :search = ''
+        OR households.household_id ILIKE :search_pattern
+        OR member_summary.household_head ILIKE :search_pattern
+    )
+    AND (
+        :household_filter = 'all'
+        OR (:household_filter = 'children' AND member_summary.children > 0)
+        OR (:household_filter = 'seniors' AND member_summary.seniors > 0)
+        OR (
+            :household_filter = 'pwd'
+            AND households.l15_with_pwd_member = '1'
+        )
+    )
+"""
+
 
 def login_required(view_function):
     """Redirect unauthenticated staff to the login page."""
@@ -170,6 +212,130 @@ def get_dashboard_data():
     return summary_cards, age_groups, food_security
 
 
+def format_household_composition(children, adults, seniors):
+    """Format only the non-zero age groups for one household."""
+
+    groups = (
+        (children, "Child", "Children"),
+        (adults, "Adult", "Adults"),
+        (seniors, "Senior", "Seniors"),
+    )
+    parts = [
+        f"{count} {singular if count == 1 else plural}"
+        for count, singular, plural in groups
+        if count > 0
+    ]
+    return " · ".join(parts) if parts else "Age data unavailable"
+
+
+def build_pagination_pages(current_page, total_pages):
+    """Return a short page-number list with None representing an ellipsis."""
+
+    if total_pages <= 7:
+        return list(range(1, total_pages + 1))
+
+    visible_pages = sorted(
+        {
+            1,
+            total_pages,
+            max(1, current_page - 1),
+            current_page,
+            min(total_pages, current_page + 1),
+        }
+    )
+    pagination_pages = []
+    previous_page = None
+
+    for page_number in visible_pages:
+        if previous_page is not None and page_number - previous_page > 1:
+            pagination_pages.append(None)
+        pagination_pages.append(page_number)
+        previous_page = page_number
+
+    return pagination_pages
+
+
+def get_household_records(search, household_filter, requested_page):
+    """Return one page of household records using read-only SQL queries."""
+
+    parameters = {
+        "search": search,
+        "search_pattern": f"%{search}%",
+        "household_filter": household_filter,
+    }
+
+    total_households = db.session.execute(
+        text(
+            HOUSEHOLD_SUMMARY_CTE
+            + """
+            SELECT COUNT(*)
+            FROM households
+            JOIN member_summary
+              ON member_summary.household_id = households.household_id
+            """
+            + HOUSEHOLD_LIST_WHERE
+        ),
+        parameters,
+    ).scalar_one()
+
+    total_pages = (
+        (total_households + HOUSEHOLDS_PER_PAGE - 1) // HOUSEHOLDS_PER_PAGE
+        if total_households
+        else 0
+    )
+    current_page = min(requested_page, total_pages) if total_pages else 1
+    offset = (current_page - 1) * HOUSEHOLDS_PER_PAGE
+
+    result_rows = db.session.execute(
+        text(
+            HOUSEHOLD_SUMMARY_CTE
+            + """
+            SELECT
+                households.household_id,
+                member_summary.household_head,
+                member_summary.member_count,
+                member_summary.children,
+                member_summary.adults,
+                member_summary.seniors
+            FROM households
+            JOIN member_summary
+              ON member_summary.household_id = households.household_id
+            """
+            + HOUSEHOLD_LIST_WHERE
+            + """
+            ORDER BY households.household_id ASC
+            LIMIT :limit
+            OFFSET :offset
+            """
+        ),
+        {
+            **parameters,
+            "limit": HOUSEHOLDS_PER_PAGE,
+            "offset": offset,
+        },
+    ).mappings()
+
+    household_records = []
+    for result_row in result_rows:
+        household = dict(result_row)
+        household["composition"] = format_household_composition(
+            household["children"],
+            household["adults"],
+            household["seniors"],
+        )
+        household_records.append(household)
+
+    return {
+        "household_records": household_records,
+        "total_households": total_households,
+        "current_page": current_page,
+        "total_pages": total_pages,
+        "pagination_pages": build_pagination_pages(current_page, total_pages),
+        "result_start": offset + 1 if household_records else 0,
+        "result_end": offset + len(household_records),
+    }
+
+
 @app.route("/dashboard")
 @login_required
 def dashboard():
@@ -193,6 +359,47 @@ def dashboard():
         summary_cards=summary_cards,
         age_groups=age_groups,
         food_security=food_security,
+    )
+
+
+@app.route("/households")
+@login_required
+def households():
+    search = request.args.get("search", "").strip()
+    household_filter = request.args.get("filter", "all").strip().lower()
+    if household_filter not in HOUSEHOLD_FILTERS:
+        household_filter = "all"
+
+    requested_page = request.args.get("page", default=1, type=int)
+    requested_page = max(requested_page or 1, 1)
+
+    try:
+        household_data = get_household_records(
+            search,
+            household_filter,
+            requested_page,
+        )
+    except SQLAlchemyError:
+        db.session.rollback()
+        app.logger.exception("Household records could not be retrieved.")
+        return (
+            render_template(
+                "households.html",
+                households_error=(
+                    "Household records could not be retrieved. "
+                    "Please try again later."
+                ),
+                search=search,
+                household_filter=household_filter,
+            ),
+            503,
+        )
+
+    return render_template(
+        "households.html",
+        search=search,
+        household_filter=household_filter,
+        **household_data,
     )
 
 

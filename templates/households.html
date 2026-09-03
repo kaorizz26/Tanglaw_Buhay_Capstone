@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% block title %}Household Records | Tanglaw-Buhay{% endblock %}
+
+{% block content %}
+    <div class="page-heading">
+        <h1>Household Records</h1>
+        <p>Browse and review household information.</p>
+    </div>
+
+    {% if households_error %}
+        <section class="page-error" role="alert" aria-labelledby="households-error-title">
+            <p class="error-eyebrow">Data unavailable</p>
+            <h2 id="households-error-title">Unable to load household records</h2>
+            <p>{{ households_error }}</p>
+        </section>
+    {% else %}
+        <section class="records-section" aria-labelledby="records-title">
+            <h2 class="visually-hidden" id="records-title">Household record list</h2>
+
+            <form class="records-toolbar" method="get" action="{{ url_for('households') }}">
+                <div class="control-field search-control">
+                    <label for="household-search">Search</label>
+                    <input
+                        id="household-search"
+                        name="search"
+                        type="search"
+                        value="{{ search }}"
+                        placeholder="Search household ID or household head..."
+                    >
+                </div>
+
+                <div class="control-field filter-control">
+                    <label for="household-filter">Household filter</label>
+                    <select id="household-filter" name="filter">
+                        <option value="all"{% if household_filter == 'all' %} selected{% endif %}>All Households</option>
+                        <option value="children"{% if household_filter == 'children' %} selected{% endif %}>With Children</option>
+                        <option value="seniors"{% if household_filter == 'seniors' %} selected{% endif %}>With Seniors</option>
+                        <option value="pwd"{% if household_filter == 'pwd' %} selected{% endif %}>With PWD Members</option>
+                    </select>
+                </div>
+
+                <button class="records-submit" type="submit">Apply</button>
+
+                {% if search or household_filter != 'all' %}
+                    <a class="clear-controls" href="{{ url_for('households') }}">Clear</a>
+                {% endif %}
+            </form>
+
+            <div class="records-surface">
+                <div class="records-meta">
+                    <p aria-live="polite">
+                        Showing {{ result_start }}–{{ result_end }} of {{ total_households }} households
+                    </p>
+                </div>
+
+                {% if household_records %}
+                    <div
+                        class="table-scroll"
+                        role="region"
+                        aria-label="Household records table"
+                        tabindex="0"
+                    >
+                        <table class="records-table">
+                            <caption class="visually-hidden">
+                                Household IDs, household heads, member totals, and age composition
+                            </caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Household ID</th>
+                                    <th scope="col">Household Head</th>
+                                    <th scope="col" class="numeric-column">Members</th>
+                                    <th scope="col">Household Composition</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for household in household_records %}
+                                    <tr>
+                                        <td class="household-id">{{ household.household_id }}</td>
+                                        <td class="head-name">{{ household.household_head }}</td>
+                                        <td class="numeric-column">{{ household.member_count }}</td>
+                                        <td>{{ household.composition }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {% if total_pages > 1 %}
+                        <nav class="pagination" aria-label="Household records pagination">
+                            {% if current_page > 1 %}
+                                <a
+                                    class="pagination-link pagination-direction"
+                                    href="{{ url_for('households', search=search, filter=household_filter, page=current_page - 1) }}"
+                                    rel="prev"
+                                >Previous</a>
+                            {% else %}
+                                <span class="pagination-link pagination-direction is-disabled" aria-disabled="true">Previous</span>
+                            {% endif %}
+
+                            <div class="pagination-pages">
+                                {% for page_number in pagination_pages %}
+                                    {% if page_number %}
+                                        <a
+                                            class="pagination-link{% if page_number == current_page %} is-current{% endif %}"
+                                            href="{{ url_for('households', search=search, filter=household_filter, page=page_number) }}"
+                                            {% if page_number == current_page %}aria-current="page"{% endif %}
+                                        >{{ page_number }}</a>
+                                    {% else %}
+                                        <span class="pagination-ellipsis" aria-hidden="true">…</span>
+                                    {% endif %}
+                                {% endfor %}
+                            </div>
+
+                            {% if current_page < total_pages %}
+                                <a
+                                    class="pagination-link pagination-direction"
+                                    href="{{ url_for('households', search=search, filter=household_filter, page=current_page + 1) }}"
+                                    rel="next"
+                                >Next</a>
+                            {% else %}
+                                <span class="pagination-link pagination-direction is-disabled" aria-disabled="true">Next</span>
+                            {% endif %}
+                        </nav>
+                    {% endif %}
+                {% else %}
+                    <div class="records-empty">
+                        <h3>No households found.</h3>
+                        <p>Try a different search or household filter.</p>
+                        {% if search or household_filter != 'all' %}
+                            <a href="{{ url_for('households') }}">Clear search and filter</a>
+                        {% endif %}
+                    </div>
+                {% endif %}
+            </div>
+        </section>
+    {% endif %}
+{% endblock %}

@@ -31,6 +31,14 @@
                     <span class="nav-indicator" aria-hidden="true"></span>
                     Dashboard
                 </a>
+                <a
+                    class="nav-link{% if request.endpoint == 'households' %} is-active{% endif %}"
+                    href="{{ url_for('households') }}"
+                    {% if request.endpoint == 'households' %}aria-current="page"{% endif %}
+                >
+                    <span class="nav-indicator" aria-hidden="true"></span>
+                    Household Records
+                </a>
             </nav>
 
             <div class="sidebar-account">
